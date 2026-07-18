@@ -1,0 +1,6 @@
+{
+  "name": "Rooted & Ready Academy",
+  "description": "Growing Roses from Concrete. A premium corporate training academy featuring tree and root motifs, courses, progress metrics, and coursework tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
