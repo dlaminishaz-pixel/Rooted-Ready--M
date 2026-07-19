@@ -28,7 +28,7 @@ import androidx.room.RoomDatabase
         Company::class,
         UserCourseProgress::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class LmsDatabase : RoomDatabase() {

@@ -50,6 +50,11 @@ class LmsViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 populateSampleData()
             }
+
+            // Reactively sync suspensions whenever payments state changes
+            payments.collect {
+                syncSuspensionsAndUnlockCourses()
+            }
         }
     }
 
@@ -552,19 +557,177 @@ class LmsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Payments
-    fun logPayment(clientName: String, amount: Double, status: String) {
+    fun logPayment(
+        clientName: String,
+        amount: Double,
+        status: String,
+        paymentType: String = "Manual EFT",
+        reference: String = "REF-${System.currentTimeMillis() % 100000}",
+        userEmail: String = "",
+        notes: String = "",
+        hasInvoice: Boolean = true,
+        hasReceipt: Boolean = false,
+        courseId: Int = 0,
+        dueDate: Long = System.currentTimeMillis() + 14 * 24 * 3600 * 1000L
+    ) {
         viewModelScope.launch {
             repository.insertPayment(Payment(
                 clientName = clientName,
                 amount = amount,
-                status = status
+                status = status,
+                paymentType = paymentType,
+                reference = reference,
+                userEmail = userEmail,
+                notes = notes,
+                hasInvoice = hasInvoice,
+                hasReceipt = hasReceipt,
+                courseId = courseId,
+                dueDate = dueDate
             ))
         }
     }
 
     fun updatePaymentStatus(payment: Payment, newStatus: String) {
         viewModelScope.launch {
-            repository.updatePayment(payment.copy(status = newStatus))
+            val updated = payment.copy(
+                status = newStatus,
+                hasReceipt = if (newStatus == "Paid") true else payment.hasReceipt
+            )
+            repository.updatePayment(updated)
+            
+            // If individual student payment unlocks a specific course:
+            if (newStatus == "Paid" && updated.courseId > 0 && updated.userEmail.isNotEmpty()) {
+                val studentUser = users.value.find { it.email.lowercase().trim() == updated.userEmail.lowercase().trim() }
+                if (studentUser != null) {
+                    val existingProgress = userCourseProgress.value.find { 
+                        it.userId == studentUser.id && it.courseId == updated.courseId 
+                    }
+                    if (existingProgress == null) {
+                        repository.insertUserCourseProgress(UserCourseProgress(
+                            userId = studentUser.id,
+                            courseId = updated.courseId,
+                            progress = 0.0,
+                            grade = 0,
+                            complianceStatus = "In Progress"
+                        ))
+                    }
+                }
+            }
+            
+            syncSuspensionsAndUnlockCourses()
+        }
+    }
+
+    fun syncSuspensionsAndUnlockCourses() {
+        viewModelScope.launch {
+            val allPayments = payments.value
+            val allUsers = users.value
+
+            // Find any corporate client whose invoice is overdue
+            val overdueCompanies = allPayments
+                .filter { it.status == "Overdue" && it.paymentType == "Corporate Invoice" }
+                .map { it.clientName.lowercase().trim() }
+                .toSet()
+
+            // Find any individual learners who have an overdue payment
+            val overdueLearnerEmails = allPayments
+                .filter { it.status == "Overdue" && it.userEmail.isNotEmpty() }
+                .map { it.userEmail.lowercase().trim() }
+                .toSet()
+
+            allUsers.forEach { user ->
+                if (user.role == "Learner") {
+                    val hasOverdueCorporate = overdueCompanies.contains(user.company.lowercase().trim())
+                    val hasOverdueIndividual = overdueLearnerEmails.contains(user.email.lowercase().trim())
+                    val shouldBeSuspended = hasOverdueCorporate || hasOverdueIndividual
+
+                    val targetStatus = if (shouldBeSuspended) "Suspended" else "Active"
+                    if (user.status != targetStatus) {
+                        repository.updateUser(user.copy(status = targetStatus))
+                    }
+                }
+            }
+        }
+    }
+
+    fun isCourseLocked(userEmail: String, course: Course): Boolean {
+        val user = users.value.find { it.email.lowercase().trim() == userEmail.lowercase().trim() } ?: return false
+        
+        // Admins, Super Admins, and Facilitators always have all courses unlocked
+        if (user.role == "Super Administrator (Founder)" || user.role == "Administrator" || user.role == "Facilitator") {
+            return false
+        }
+        
+        // If it is a Corporate Academy course:
+        if (course.category == "Corporate Academy") {
+            // It is unlocked if their company has a paid corporate invoice
+            val companyPayments = payments.value.filter { 
+                it.clientName.lowercase().trim() == user.company.lowercase().trim() && 
+                it.paymentType == "Corporate Invoice" 
+            }
+            if (companyPayments.isEmpty()) return true
+            val hasOverdue = companyPayments.any { it.status == "Overdue" }
+            val hasPaid = companyPayments.any { it.status == "Paid" }
+            return !hasPaid || hasOverdue
+        } else {
+            // For general courses, check if they have paid for this specific course
+            val coursePayments = payments.value.filter { 
+                it.userEmail.lowercase().trim() == userEmail.lowercase().trim() && 
+                it.courseId == course.id 
+            }
+            val hasPaid = coursePayments.any { it.status == "Paid" }
+            return !hasPaid
+        }
+    }
+
+    fun registerPurchase(
+        userEmail: String,
+        userName: String,
+        courseId: Int,
+        courseName: String,
+        amount: Double,
+        paymentType: String, // "Manual EFT", "Card", "Monthly Instalment"
+        reference: String,
+        notes: String = ""
+    ) {
+        viewModelScope.launch {
+            val status = when (paymentType) {
+                "Card" -> "Paid"
+                "Manual EFT" -> "Pending Verification"
+                else -> "Pending" // Monthly Instalment starts as pending
+            }
+            
+            repository.insertPayment(Payment(
+                clientName = userName,
+                amount = amount,
+                status = status,
+                paymentType = paymentType,
+                reference = reference,
+                userEmail = userEmail,
+                notes = notes,
+                hasInvoice = true,
+                hasReceipt = (status == "Paid"),
+                courseId = courseId
+            ))
+            
+            // Also if Card, let's make sure they are enrolled or progress is initialized
+            if (status == "Paid" && courseId > 0) {
+                val user = users.value.find { it.email.lowercase().trim() == userEmail.lowercase().trim() }
+                if (user != null) {
+                    val existingProgress = userCourseProgress.value.find { it.userId == user.id && it.courseId == courseId }
+                    if (existingProgress == null) {
+                        repository.insertUserCourseProgress(UserCourseProgress(
+                            userId = user.id,
+                            courseId = courseId,
+                            progress = 0.0,
+                            grade = 0,
+                            complianceStatus = "In Progress"
+                        ))
+                    }
+                }
+            }
+            
+            syncSuspensionsAndUnlockCourses()
         }
     }
 
@@ -730,10 +893,14 @@ class LmsViewModel(application: Application) : AndroidViewModel(application) {
         repository.insertVirtualClass(VirtualClass(courseId = csId, title = "Interactive Scalability Lab 02", platform = "Zoom", url = "https://zoom.us/j/123456789", scheduledTime = now + 2 * oneDay))
         repository.insertVirtualClass(VirtualClass(courseId = mathId, title = "Strategic Communication Masterclass", platform = "Google Meet", url = "https://meet.google.com/abc-defg-hij", scheduledTime = now + 3 * oneDay))
 
-        // Payments
-        repository.insertPayment(Payment(clientName = "Wayne Enterprises Corp", amount = 15000.00, status = "Paid"))
-        repository.insertPayment(Payment(clientName = "Stark Industries Career Sponsor", amount = 5000.00, status = "Pending"))
-        repository.insertPayment(Payment(clientName = "Oscorp Corporate Training Program", amount = 8500.00, status = "Overdue"))
+        // Payments (Corporate Invoices and Student payments)
+        repository.insertPayment(Payment(clientName = "Wayne Enterprises", amount = 15000.00, status = "Paid", paymentType = "Corporate Invoice", reference = "INV-2026-001", hasInvoice = true, hasReceipt = true))
+        repository.insertPayment(Payment(clientName = "Stark Industries", amount = 5000.00, status = "Pending", paymentType = "Corporate Invoice", reference = "INV-2026-002", hasInvoice = true))
+        repository.insertPayment(Payment(clientName = "Oscorp Corp", amount = 8500.00, status = "Overdue", paymentType = "Corporate Invoice", reference = "INV-2026-003", hasInvoice = true, dueDate = System.currentTimeMillis() - 5 * 24 * 3600 * 1000L))
+        
+        // Individual student payments
+        repository.insertPayment(Payment(clientName = "Peter Parker", userEmail = "peter.parker@student.com", amount = 4500.00, status = "Paid", paymentType = "Card", reference = "PAY-PP-001", hasReceipt = true, hasInvoice = true, courseId = 1))
+        repository.insertPayment(Payment(clientName = "Peter Parker", userEmail = "peter.parker@student.com", amount = 375.00, status = "Pending", paymentType = "Monthly Instalment", reference = "PAY-PP-002", hasInvoice = true, dueDate = System.currentTimeMillis() + 10 * 24 * 3600 * 1000L))
 
         // Placements
         repository.insertPlacement(Placement(learnerName = "Peter Parker", partnerName = "Stark Industries", role = "Cloud Architect Intern", status = "Interviewing"))

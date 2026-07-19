@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -39,6 +40,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import com.example.R
 import com.example.data.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -100,6 +107,29 @@ fun MainScreen(viewModel: LmsViewModel) {
     var selectedTab by remember(currentRole) { mutableStateOf(0) }
     var showRoleSelector by remember { mutableStateOf(false) }
     
+    var showPaymentPortal by remember { mutableStateOf(false) }
+    
+    val currentUser = users.find { it.role == currentRole } ?: when (currentRole) {
+        "Super Administrator (Founder)" -> users.find { it.role.startsWith("Super Administrator") }
+        "Administrator" -> users.find { it.role == "Administrator" }
+        "Facilitator" -> users.find { it.role == "Facilitator" }
+        "Corporate Client" -> users.find { it.role == "Corporate Client" }
+        "Learner" -> users.find { it.role == "Learner" }
+        else -> null
+    }
+    
+    val isSuspended = currentUser?.status == "Suspended"
+    val overdueInvoices = payments.filter {
+        val isCorp = currentUser?.role == "Corporate Client"
+        if (isCorp) {
+            it.clientName.lowercase().trim() == currentUser?.company?.lowercase()?.trim() && 
+            it.status == "Overdue"
+        } else {
+            it.userEmail.lowercase().trim() == currentUser?.email?.lowercase()?.trim() &&
+            it.status == "Overdue"
+        }
+    }
+    
     // Backup restoring simulation progress state
     var restoringBackup by remember { mutableStateOf<BackupRecord?>(null) }
     var backupProgress by remember { mutableFloatStateOf(0f) }
@@ -117,42 +147,396 @@ fun MainScreen(viewModel: LmsViewModel) {
         }
     }
     
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = BrandCream,
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    var showLandingPage by remember { mutableStateOf(true) }
+    var showBrandStyleGuide by remember { mutableStateOf(false) }
+
+    if (showLandingPage) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(BrandCream, BrandWhite)
+                    )
+                )
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 480.dp),
+                shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(2.dp, dynamicGold),
+                colors = CardDefaults.cardColors(containerColor = BrandWhite),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    // Official Logo
+                    Image(
+                        painter = painterResource(id = R.drawable.lms_launcher_fg),
+                        contentDescription = "Rooted & Ready Official Logo",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(110.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.5.dp, dynamicGold.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+                        contentScale = ContentScale.Fit
+                    )
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Text(
                             text = "ROOTED & READY ACADEMY",
                             fontWeight = FontWeight.Black,
-                            fontSize = 15.sp,
+                            fontSize = 20.sp,
                             color = dynamicPrimary,
-                            letterSpacing = 1.sp
+                            letterSpacing = 1.5.sp,
+                            textAlign = TextAlign.Center
                         )
                         Text(
-                            text = dynamicMotto,
-                            fontSize = 9.sp,
+                            text = "Growing Roses from Concrete",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = DarkCharcoal,
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = "Rooted in Knowledge. Ready for Opportunity.",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
                             color = dynamicGold,
-                            fontStyle = FontStyle.Italic,
-                            fontWeight = FontWeight.Bold
+                            textAlign = TextAlign.Center,
+                            letterSpacing = 0.5.sp
                         )
                     }
-                },
-                actions = {
-                    Box {
-                        IconButton(
-                            onClick = { showRoleSelector = true },
-                            modifier = Modifier.testTag("role_selector_trigger")
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .background(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(
+                                        dynamicGold.copy(alpha = 0.1f),
+                                        dynamicGold,
+                                        dynamicGold.copy(alpha = 0.1f)
+                                    )
+                                )
+                            )
+                    )
+
+                    // Simulated Academic Login Fields
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "ACADEMIC PORTAL SECURE LOGIN",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = dynamicGold,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        )
+
+                        var simUsername by remember { mutableStateOf("shaz.dlamini@rooted.academy") }
+                        var simPassword by remember { mutableStateOf("••••••••••••") }
+
+                        OutlinedTextField(
+                            value = simUsername,
+                            onValueChange = { simUsername = it },
+                            label = { Text("University / Corporate Email") },
+                            leadingIcon = { Icon(Icons.Default.Email, null, tint = dynamicPrimary) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = dynamicPrimary,
+                                focusedLabelColor = dynamicPrimary
+                            )
+                        )
+
+                        OutlinedTextField(
+                            value = simPassword,
+                            onValueChange = { simPassword = it },
+                            label = { Text("Security Access Key") },
+                            leadingIcon = { Icon(Icons.Default.Lock, null, tint = dynamicPrimary) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = dynamicPrimary,
+                                focusedLabelColor = dynamicPrimary
+                            )
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            showLandingPage = false
+                            Toast.makeText(context, "AUTHENTICATED: Welcome to Rooted & Ready LMS", Toast.LENGTH_LONG).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = dynamicPrimary),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Default.ManageAccounts, "Switch Role", tint = dynamicPrimary)
+                            Icon(Icons.Default.Login, null)
+                            Text("Secure Login & Enter LMS", fontWeight = FontWeight.Black, fontSize = 14.sp)
                         }
-                        
-                        DropdownMenu(
-                            expanded = showRoleSelector,
-                            onDismissRequest = { showRoleSelector = false }
+                    }
+
+                    TextButton(
+                        onClick = { showBrandStyleGuide = true },
+                        modifier = Modifier.testTag("btn_landing_brand_style_guide")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
+                            Icon(Icons.Outlined.Palette, null, tint = dynamicGold, modifier = Modifier.size(16.dp))
+                            Text("Brand Style Guide", color = dynamicGold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    Text(
+                        text = "Authorized Personnel Only • Standard 256-bit Encryption Active",
+                        fontSize = 8.sp,
+                        color = Color.Gray,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+    } else {
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            drawerContent = {
+                ModalDrawerSheet(
+                    drawerContainerColor = BrandCream,
+                    drawerContentColor = DarkCharcoal,
+                    modifier = Modifier.width(300.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Logo and Title in Drawer (Sidebar)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.lms_launcher_fg),
+                                contentDescription = "Rooted & Ready Official Logo",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(65.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .border(1.5.dp, dynamicGold.copy(alpha = 0.5f), RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Fit
+                            )
+                            Text(
+                                text = "ROOTED & READY ACADEMY",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 15.sp,
+                                color = dynamicPrimary,
+                                letterSpacing = 1.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            Text(
+                                text = "Growing Roses from Concrete",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                color = DarkCharcoal,
+                                textAlign = TextAlign.Center
+                            )
+                            Text(
+                                text = "Rooted in Knowledge. Ready for Opportunity.",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = dynamicGold,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        HorizontalDivider(color = dynamicGold.copy(alpha = 0.3f))
+
+                        // Simulated sidebar items depending on role
+                        Text(
+                            text = "ACADEMIC PORTAL SECTIONS",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = dynamicGold,
+                            letterSpacing = 1.sp
+                        )
+
+                        val tabs = getTabsForRole(currentRole)
+                        tabs.forEachIndexed { index, pair ->
+                            NavigationDrawerItem(
+                                label = { Text(pair.first, fontWeight = FontWeight.Bold, fontSize = 13.sp) },
+                                selected = selectedTab == index,
+                                onClick = {
+                                    selectedTab = index
+                                    scope.launch { drawerState.close() }
+                                },
+                                icon = { Icon(pair.second, contentDescription = null, tint = dynamicPrimary) },
+                                colors = NavigationDrawerItemDefaults.colors(
+                                    selectedContainerColor = dynamicPrimary.copy(alpha = 0.12f),
+                                    unselectedContainerColor = Color.Transparent,
+                                    selectedTextColor = dynamicPrimary,
+                                    unselectedTextColor = DarkCharcoal
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        HorizontalDivider(color = dynamicGold.copy(alpha = 0.15f))
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        NavigationDrawerItem(
+                            label = { Text("Brand Style Guide", fontWeight = FontWeight.Bold, fontSize = 13.sp) },
+                            selected = false,
+                            onClick = {
+                                showBrandStyleGuide = true
+                                scope.launch { drawerState.close() }
+                            },
+                            icon = { Icon(Icons.Outlined.Palette, contentDescription = "Style Guide", tint = dynamicGold) },
+                            colors = NavigationDrawerItemDefaults.colors(
+                                selectedContainerColor = Color.Transparent,
+                                unselectedContainerColor = Color.Transparent,
+                                selectedTextColor = dynamicGold,
+                                unselectedTextColor = DarkCharcoal
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.testTag("btn_sidebar_brand_style_guide")
+                        )
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        Button(
+                            onClick = {
+                                showLandingPage = true
+                                scope.launch { drawerState.close() }
+                                Toast.makeText(context, "Securely Logged Out", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = dynamicGold),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Default.Logout, null)
+                                Text("Secure Logout")
+                            }
+                        }
+
+                        // Institution Footer
+                        Text(
+                            text = "SECURE PRIVILEGED ENVIRONMENT",
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Gray,
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        )
+                    }
+                }
+            }
+        ) {
+            Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                containerColor = BrandCream,
+                topBar = {
+                    CenterAlignedTopAppBar(
+                        navigationIcon = {
+                            IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        if (drawerState.isClosed) drawerState.open() else drawerState.close()
+                                    }
+                                },
+                                modifier = Modifier.testTag("btn_navigation_sidebar_menu")
+                            ) {
+                                Icon(Icons.Default.Menu, "Open Navigation Sidebar", tint = dynamicPrimary)
+                            }
+                        },
+                        title = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.lms_launcher_fg),
+                                    contentDescription = "Rooted & Ready Official Logo",
+                                    modifier = Modifier
+                                        .width(88.dp)
+                                        .height(30.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .border(1.dp, dynamicGold.copy(alpha = 0.3f), RoundedCornerShape(4.dp)),
+                                    contentScale = ContentScale.Fit
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(horizontalAlignment = Alignment.Start) {
+                                    Text(
+                                        text = "ROOTED & READY ACADEMY",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 13.sp,
+                                        color = dynamicPrimary,
+                                        letterSpacing = 1.sp
+                                    )
+                                    Text(
+                                        text = "Rooted in Knowledge. Ready for Opportunity.",
+                                        fontSize = 8.sp,
+                                        color = dynamicGold,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        },
+                actions = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { showBrandStyleGuide = true },
+                            modifier = Modifier.testTag("btn_global_brand_style_guide")
+                        ) {
+                            Icon(Icons.Outlined.Palette, "Academy Brand Style Guide", tint = dynamicPrimary)
+                        }
+                        IconButton(
+                            onClick = { showPaymentPortal = true },
+                            modifier = Modifier.testTag("btn_global_payment_portal")
+                        ) {
+                            Icon(Icons.Default.Payments, "Payment Portal", tint = dynamicPrimary)
+                        }
+                        Box {
+                            IconButton(
+                                onClick = { showRoleSelector = true },
+                                modifier = Modifier.testTag("role_selector_trigger")
+                            ) {
+                                Icon(Icons.Default.ManageAccounts, "Switch Role", tint = dynamicPrimary)
+                            }
+                            
+                            DropdownMenu(
+                                expanded = showRoleSelector,
+                                onDismissRequest = { showRoleSelector = false }
+                            ) {
                             Text(
                                 text = "SIMULATE ROLE DASHBOARD",
                                 fontSize = 10.sp,
@@ -185,6 +569,7 @@ fun MainScreen(viewModel: LmsViewModel) {
                                 )
                             }
                         }
+                    }
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = BrandWhite),
@@ -250,61 +635,167 @@ fun MainScreen(viewModel: LmsViewModel) {
                     .widthIn(max = 800.dp)
                     .align(Alignment.TopCenter)
             ) {
-                // Role Badge Indicator
-                Card(
+                // Premium Academy Branding Header Banner (Rooted & Ready)
+                PremiumAcademyBrandingBanner(
+                    currentRole = currentRole,
+                    dynamicPrimary = dynamicPrimary,
+                    dynamicGold = dynamicGold,
+                    motto = dynamicMotto
+                )
+
+                // Main Dashboard Body
+                Box(modifier = Modifier.weight(1f)) {
+                    if (isSuspended) {
+                        SuspendedBlockScreen(
+                            currentUser = currentUser,
+                            overdueInvoices = overdueInvoices,
+                            dynamicPrimary = dynamicPrimary,
+                            onOpenPortal = { showPaymentPortal = true }
+                        )
+                    } else {
+                        RenderDashboardBody(
+                            currentRole = currentRole,
+                            tabIndex = selectedTab,
+                            viewModel = viewModel,
+                            courses = courses,
+                            assignments = assignments,
+                            users = users,
+                            quizzes = quizzes,
+                            announcements = announcements,
+                            virtualClasses = virtualClasses,
+                            payments = payments,
+                            placements = placements,
+                            attendance = attendance,
+                            resources = resources,
+                            backups = backups,
+                            customRoles = customRoles,
+                            dynamicPrimary = dynamicPrimary,
+                            dynamicGold = dynamicGold,
+                            onRestoreBackup = { restoringBackup = it }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+}
+
+    if (showPaymentPortal) {
+        PaymentPortalComponent(
+            viewModel = viewModel,
+            currentUser = currentUser,
+            courses = courses,
+            onDismiss = { showPaymentPortal = false }
+        )
+    }
+
+    if (showBrandStyleGuide) {
+        BrandStyleGuideDialog(
+            onDismiss = { showBrandStyleGuide = false },
+            dynamicPrimary = dynamicPrimary,
+            dynamicGold = dynamicGold
+        )
+    }
+}
+
+@Composable
+fun SuspendedBlockScreen(
+    currentUser: UserAccount?,
+    overdueInvoices: List<com.example.data.Payment>,
+    dynamicPrimary: Color,
+    onOpenPortal: () -> Unit
+) {
+    val totalOverdue = overdueInvoices.sumOf { it.amount }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 500.dp),
+            colors = CardDefaults.cardColors(containerColor = BrandWhite),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.dp, AlertRed.copy(alpha = 0.3f))
+        ) {
+            Column(
+                modifier = Modifier.padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Suspended Lock Icon
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = dynamicPrimary.copy(alpha = 0.08f)),
-                    border = BorderStroke(1.dp, dynamicGold.copy(alpha = 0.3f)),
-                    shape = RoundedCornerShape(12.dp)
+                        .size(72.dp)
+                        .clip(CircleShape)
+                        .background(SoftRed),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.VerifiedUser, "Role", tint = dynamicGold, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Access Locked",
+                        tint = AlertRed,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "ACCESS TEMPORARILY SUSPENDED",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 16.sp,
+                        color = AlertRed,
+                        letterSpacing = 1.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = "Rooted & Ready Academy Trust",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MutedCharcoal
+                    )
+                }
+
+                Text(
+                    text = "Your profile '${currentUser?.name}' is currently suspended because the sponsor account or student tuition fees for this syllabus block are overdue.",
+                    fontSize = 12.sp,
+                    color = DarkCharcoal,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+
+                // Overdue ledger summary
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SoftRed.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("TOTAL OVERDUE BALANCE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = AlertRed)
+                        Text("R${"%,.2f".format(totalOverdue)}", fontWeight = FontWeight.Black, fontSize = 24.sp, color = AlertRed)
+                        if (overdueInvoices.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "AUTHORIZED ACCESS LEVEL",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = dynamicGold,
-                                letterSpacing = 1.sp
-                            )
-                            Text(
-                                text = currentRole,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Black,
-                                color = dynamicPrimary
+                                "Outstanding Reference: ${overdueInvoices.firstOrNull()?.reference ?: "N/A"}",
+                                fontSize = 11.sp,
+                                color = DarkCharcoal,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
 
-                // Main Dashboard Body
-                Box(modifier = Modifier.weight(1f)) {
-                    RenderDashboardBody(
-                        currentRole = currentRole,
-                        tabIndex = selectedTab,
-                        viewModel = viewModel,
-                        courses = courses,
-                        assignments = assignments,
-                        users = users,
-                        quizzes = quizzes,
-                        announcements = announcements,
-                        virtualClasses = virtualClasses,
-                        payments = payments,
-                        placements = placements,
-                        attendance = attendance,
-                        resources = resources,
-                        backups = backups,
-                        customRoles = customRoles,
-                        dynamicPrimary = dynamicPrimary,
-                        dynamicGold = dynamicGold,
-                        onRestoreBackup = { restoringBackup = it }
-                    )
+                Button(
+                    onClick = onOpenPortal,
+                    colors = ButtonDefaults.buttonColors(containerColor = AlertRed),
+                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_suspended_checkout")
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Payments, null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Authorize & Settle Tuition", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -412,6 +903,7 @@ fun ControlRoomTab(
     dynamicGold: Color,
     onRestoreBackup: (BackupRecord) -> Unit
 ) {
+    val context = LocalContext.current
     var showAddUser by remember { mutableStateOf(false) }
     var showCreateRole by remember { mutableStateOf(false) }
     var showBranding by remember { mutableStateOf(false) }
@@ -446,6 +938,10 @@ fun ControlRoomTab(
                 fontSize = 18.sp,
                 color = DarkCharcoal
             )
+        }
+
+        item {
+            CompactAcademyQuoteCard(dynamicPrimary, dynamicGold)
         }
 
         // Section: Users Accounts Manager
@@ -741,6 +1237,127 @@ fun ControlRoomTab(
             }
         }
 
+        // Section: Official Academy Email & Notification Templates
+        item {
+            var selectedEmailTemplate by remember { mutableStateOf("Enrollment Confirmation") }
+            ControlRoomSectionCard(
+                title = "Official Notification & Email Template Studio",
+                icon = Icons.Default.Email,
+                headerColor = dynamicPrimary
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Official templates are pre-configured brand notification assets containing the verified Rooted & Ready logo and layout proportions.",
+                        fontSize = 11.sp,
+                        color = MutedCharcoal
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        listOf("Enrollment Confirmation", "Certificate Awarded", "Payment Received").forEach { template ->
+                            ElevatedFilterChip(
+                                selected = selectedEmailTemplate == template,
+                                onClick = { selectedEmailTemplate = template },
+                                label = { Text(template, fontSize = 10.sp) }
+                            )
+                        }
+                    }
+
+                    // Interactive Simulated Email Client Preview Box
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, dynamicGold.copy(alpha = 0.3f), RoundedCornerShape(12.dp)),
+                        colors = CardDefaults.cardColors(containerColor = BrandWhite)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            // Simulated Email Header
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.lms_launcher_fg),
+                                        contentDescription = "Rooted & Ready Official Logo",
+                                        modifier = Modifier
+                                            .width(110.dp)
+                                            .height(38.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .border(1.dp, dynamicGold.copy(alpha = 0.4f), RoundedCornerShape(4.dp)),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text("ROOTED & READY ACADEMY", fontWeight = FontWeight.Black, fontSize = 11.sp, color = dynamicPrimary)
+                                        Text("communications@rooted.ready.academy", fontSize = 8.sp, color = MutedCharcoal)
+                                    }
+                                }
+                                Badge(containerColor = dynamicGold, contentColor = BrandWhite) {
+                                    Text("OFFICIAL BRAND EMAIL", fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            HorizontalDivider(color = dynamicGold.copy(alpha = 0.2f))
+
+                            // Email Metadata
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("To: learner.profile@rooted.academy", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = DarkCharcoal)
+                                Text(
+                                    text = "Subject: " + when (selectedEmailTemplate) {
+                                        "Enrollment Confirmation" -> "CONFIRMED: Your Enrollment at Rooted & Ready Academy"
+                                        "Certificate Awarded" -> "CONGRATULATIONS: Your Graduate Certificate of Completion is Ready!"
+                                        "Payment Received" -> "RECEIPT: Tuition Fees Payment Successful Reference"
+                                        else -> ""
+                                    },
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = dynamicPrimary
+                                )
+                            }
+
+                            // Email Body
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BrandCream),
+                                border = BorderStroke(1.dp, dynamicGold.copy(alpha = 0.15f))
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = when (selectedEmailTemplate) {
+                                            "Enrollment Confirmation" -> "Dear Candidate,\n\nWe are extremely pleased to confirm your official enrollment at the Rooted & Ready Academy. Your curriculum access keys have been generated.\n\nDeepen your roots in knowledge, and prepare to seize every opportunity."
+                                            "Certificate Awarded" -> "Dear Graduate,\n\nCongratulations! Upon complete evaluation of your academic submissions, the Governing Board has formally authorized the issuance of your Graduate Certificate of Completion.\n\nYou have successfully grown your rose from concrete."
+                                            "Payment Received" -> "Dear Sponsor,\n\nThis is an official automated confirmation that your secure payment of R8,450.00 towards tuition billing has been successfully processed.\n\nThank you for investing in real educational transformation."
+                                            else -> ""
+                                        },
+                                        fontSize = 11.sp,
+                                        color = DarkCharcoal,
+                                        lineHeight = 16.sp
+                                    )
+                                    
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Warm academic regards,", fontSize = 10.sp, color = MutedCharcoal)
+                                    Text("The Board of Governors\nRooted & Ready Private Academy", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = dynamicPrimary)
+                                }
+                            }
+
+                            Button(
+                                onClick = {
+                                    Toast.makeText(context, "Email template synchronized with mail servers!", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = dynamicPrimary),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Synchronize Mail Template")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Section: System Snapshots & Recoveries (Founder Exclusive restore)
         item {
             val isFounder = activeRole == "Super Administrator (Founder)"
@@ -919,6 +1536,10 @@ fun CourseBuilderWorkspaceWrapper(
                         Text(if (showAddCourse) "Close" else "Create Course", fontSize = 12.sp)
                     }
                 }
+            }
+
+            item {
+                CompactAcademyQuoteCard(dynamicPrimary, dynamicGold)
             }
 
             if (showAddCourse) {
@@ -2272,11 +2893,15 @@ fun PremiumCertificateCard(
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = Icons.Default.Star,
-                        contentDescription = null,
-                        tint = if (isEnabled) dynamicGold else Color.Gray,
-                        modifier = Modifier.size(36.dp)
+                    Image(
+                        painter = painterResource(id = R.drawable.lms_launcher_fg),
+                        contentDescription = "Rooted & Ready Official Logo",
+                        modifier = Modifier
+                            .width(160.dp)
+                            .height(55.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .border(1.dp, dynamicGold.copy(alpha = 0.5f), RoundedCornerShape(6.dp)),
+                        contentScale = ContentScale.Fit
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -2390,6 +3015,10 @@ fun OperationsTab(
     ) {
         item {
             Text("Academy Strategic Operations & Pipelines", fontWeight = FontWeight.Black, fontSize = 18.sp, color = DarkCharcoal)
+        }
+
+        item {
+            CompactAcademyQuoteCard(dynamicPrimary, dynamicGold)
         }
 
         // Section: Corporate Payment Ledgers
@@ -2672,6 +3301,10 @@ fun FacilitatorClassStudioTab(
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text("Syllabus Design & Virtual Lecture Classroom", fontWeight = FontWeight.Black, fontSize = 18.sp, color = DarkCharcoal)
+        }
+
+        item {
+            CompactAcademyQuoteCard(dynamicPrimary, dynamicGold)
         }
 
         // Virtual Classes Scheduler
@@ -3308,6 +3941,10 @@ fun CorporateClientCohortTab(
                     }
                 }
             }
+        }
+
+        item {
+            CompactAcademyQuoteCard(companyPrimary, companyGold)
         }
 
         // Custom Branded Company Hero Banner
@@ -3976,7 +4613,16 @@ fun CorporateAuditAndReportsTab(
             },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Description, null, tint = companyPrimary, modifier = Modifier.size(28.dp))
+                    Image(
+                        painter = painterResource(id = R.drawable.lms_launcher_fg),
+                        contentDescription = "Rooted & Ready Official Logo",
+                        modifier = Modifier
+                            .width(88.dp)
+                            .height(30.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .border(1.dp, companyGold.copy(alpha = 0.3f), RoundedCornerShape(4.dp)),
+                        contentScale = ContentScale.Fit
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("WSP & ATR Legislative Report", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
@@ -3987,12 +4633,25 @@ fun CorporateAuditAndReportsTab(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Card(colors = CardDefaults.cardColors(containerColor = BrandCream)) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text("ENTERPRISE PROFILE", fontWeight = FontWeight.Black, fontSize = 11.sp, color = companyPrimary)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("Employer Name: ${activeCompany?.name}", fontSize = 11.sp)
-                            Text("Motto/Alignment: ${activeCompany?.motto}", fontSize = 11.sp)
-                            Text("Designated SDF Facilitator: Dir. Sarah Connor", fontSize = 11.sp)
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("ENTERPRISE PROFILE", fontWeight = FontWeight.Black, fontSize = 11.sp, color = companyPrimary)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Employer Name: ${activeCompany?.name}", fontSize = 11.sp)
+                                Text("Motto/Alignment: ${activeCompany?.motto}", fontSize = 11.sp)
+                                Text("Designated SDF Facilitator: Dir. Sarah Connor", fontSize = 11.sp)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Image(
+                                painter = painterResource(id = R.drawable.lms_launcher_fg),
+                                contentDescription = "Rooted & Ready Official Logo",
+                                modifier = Modifier
+                                    .width(130.dp)
+                                    .height(45.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .border(1.dp, companyGold.copy(alpha = 0.5f), RoundedCornerShape(6.dp)),
+                                contentScale = ContentScale.Fit
+                            )
                         }
                     }
 
@@ -4150,11 +4809,15 @@ fun CorporateAuditAndReportsTab(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         // Header Seal
-                        Icon(
-                            imageVector = Icons.Default.Verified,
-                            contentDescription = null,
-                            tint = companyGold,
-                            modifier = Modifier.size(48.dp)
+                        Image(
+                            painter = painterResource(id = R.drawable.lms_launcher_fg),
+                            contentDescription = "Rooted & Ready Official Logo",
+                            modifier = Modifier
+                                .width(160.dp)
+                                .height(55.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .border(1.5.dp, companyGold, RoundedCornerShape(6.dp)),
+                            contentScale = ContentScale.Fit
                         )
                         
                         Text(
@@ -4339,9 +5002,19 @@ fun LearnerSyllabusTab(
                 border = BorderStroke(1.dp, dynamicGold.copy(alpha = 0.3f))
             ) {
                 Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.School, null, tint = dynamicPrimary, modifier = Modifier.size(40.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Image(
+                        painter = painterResource(id = R.drawable.lms_launcher_fg),
+                        contentDescription = "Rooted & Ready Official Logo",
+                        modifier = Modifier
+                            .width(130.dp)
+                            .height(45.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .border(1.5.dp, dynamicGold.copy(alpha = 0.5f), RoundedCornerShape(6.dp)),
+                        contentScale = ContentScale.Fit
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
                     Column {
+                        Text("Growing Roses from Concrete", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = DarkCharcoal)
                         Text("Rooted in Knowledge.", fontWeight = FontWeight.Black, color = dynamicPrimary)
                         Text("Ready for Opportunity.", fontWeight = FontWeight.Bold, color = dynamicGold)
                     }
@@ -4646,6 +5319,10 @@ fun LearnerDashboardTab(
                     }
                 }
             }
+        }
+
+        item {
+            CompactAcademyQuoteCard(dynamicPrimary, dynamicGold)
         }
 
         // Quick Access Grid
@@ -5889,7 +6566,16 @@ fun LearnerScheduleGradeTab(
                             modifier = Modifier.padding(24.dp).fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Icon(Icons.Default.WorkspacePremium, "Premium Certificate", tint = dynamicGold, modifier = Modifier.size(54.dp))
+                            Image(
+                                painter = painterResource(id = R.drawable.lms_launcher_fg),
+                                contentDescription = "Rooted & Ready Official Logo",
+                                modifier = Modifier
+                                    .width(160.dp)
+                                    .height(55.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .border(1.5.dp, dynamicGold, RoundedCornerShape(6.dp)),
+                                contentScale = ContentScale.Fit
+                            )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text("ROOTED & READY ACADEMY", fontWeight = FontWeight.Black, fontSize = 16.sp, color = dynamicPrimary, letterSpacing = 1.sp)
                             Text("GRADUATE CERTIFICATE OF COMPLETION", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = dynamicGold)
@@ -6300,4 +6986,243 @@ fun RecruitmentPlacementTab(
 fun formatClassDateTime(timestamp: Long): String {
     val sdf = java.text.SimpleDateFormat("EEEE, MMMM dd, yyyy 'at' hh:mm a", java.util.Locale.getDefault())
     return sdf.format(java.util.Date(timestamp))
+}
+
+@Composable
+fun PremiumAcademyBrandingBanner(
+    currentRole: String,
+    dynamicPrimary: Color,
+    dynamicGold: Color,
+    motto: String
+) {
+    val motivationalMessages = listOf(
+        "Through discipline, perseverance, and focus, even the most challenging obstacles yield to knowledge.",
+        "Your potential is limitless. Deepen your roots in knowledge, and you will be ready for every opportunity.",
+        "Excellence is not an act, but a habit. Every lesson completed is a petal of the concrete rose blooming.",
+        "The mind, once stretched by a new idea, never returns to its original dimensions.",
+        "Knowledge is the shield that guards your ambition. Let it grow deep and strong.",
+        "From humble beginnings to global leadership: study with intent, execute with precision."
+    )
+
+    var messageIndex by remember { mutableStateOf(0) }
+    LaunchedEffect(currentRole) {
+        messageIndex = (currentRole.hashCode() % motivationalMessages.size).let { if (it < 0) -it else it }
+    }
+    
+    val activeMessage = motivationalMessages[messageIndex]
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = BrandWhite),
+        border = BorderStroke(1.dp, dynamicGold.copy(alpha = 0.4f)),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            dynamicPrimary.copy(alpha = 0.05f),
+                            BrandWhite,
+                            dynamicGold.copy(alpha = 0.02f)
+                        )
+                    )
+                )
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.lms_launcher_fg),
+                    contentDescription = "Rooted & Ready Official Logo",
+                    modifier = Modifier
+                        .width(140.dp)
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .border(1.5.dp, dynamicGold.copy(alpha = 0.5f), RoundedCornerShape(6.dp)),
+                    contentScale = ContentScale.Fit
+                )
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.WorkspacePremium,
+                            contentDescription = "Premium Private Institution",
+                            tint = dynamicGold,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "ROOTED & READY ACADEMY",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 10.sp,
+                            color = dynamicPrimary,
+                            letterSpacing = 1.5.sp
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(2.dp))
+                    
+                    Text(
+                        text = "Growing Roses from Concrete",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = DarkCharcoal
+                    )
+                    
+                    Spacer(modifier = Modifier.height(1.dp))
+                    
+                    Text(
+                        text = "Rooted in Knowledge. Ready for Opportunity.",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = dynamicGold,
+                        letterSpacing = 0.5.sp
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                dynamicGold.copy(alpha = 0.1f),
+                                dynamicGold.copy(alpha = 0.6f),
+                                dynamicGold.copy(alpha = 0.1f)
+                            )
+                        )
+                    )
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Icon(
+                            imageVector = Icons.Default.Lightbulb,
+                            contentDescription = "Motivation",
+                            tint = dynamicGold,
+                            modifier = Modifier.size(14.dp).offset(y = 1.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = activeMessage,
+                            fontSize = 10.sp,
+                            fontStyle = FontStyle.Italic,
+                            fontWeight = FontWeight.Medium,
+                            color = MutedCharcoal,
+                            lineHeight = 13.sp
+                        )
+                    }
+                }
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = dynamicPrimary.copy(alpha = 0.12f)),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, dynamicGold.copy(alpha = 0.5f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "SECURE PORTAL",
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = dynamicGold,
+                            letterSpacing = 0.5.sp
+                        )
+                        Text(
+                            text = currentRole.split(" ").firstOrNull() ?: currentRole,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = dynamicPrimary
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CompactAcademyQuoteCard(
+    dynamicPrimary: Color,
+    dynamicGold: Color,
+    modifier: Modifier = Modifier
+) {
+    val quotes = listOf(
+        "Rooted in Knowledge. Ready for Opportunity.",
+        "A concrete rose grows strongest through dedication and daily learning.",
+        "Excellence in instruction breeds brilliance in execution. Study with focus.",
+        "True knowledge is not just memorized, but applied to solve real-world problems.",
+        "Your growth today is the foundation for the leadership of tomorrow.",
+        "The highest goal of education is to prepare minds for great opportunities."
+    )
+    val quote = remember { quotes.random() }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = BrandWhite),
+        border = BorderStroke(1.dp, dynamicGold.copy(alpha = 0.3f)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    brush = Brush.linearGradient(
+                        colors = listOf(dynamicPrimary.copy(alpha = 0.03f), BrandWhite)
+                    )
+                )
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(dynamicPrimary.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.School,
+                    contentDescription = null,
+                    tint = dynamicGold,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "ACADEMY MOTIVATION",
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = dynamicGold,
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    text = "\"$quote\"",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = DarkCharcoal,
+                    fontStyle = FontStyle.Italic
+                )
+            }
+        }
+    }
 }

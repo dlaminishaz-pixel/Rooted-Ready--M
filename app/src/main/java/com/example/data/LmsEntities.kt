@@ -100,8 +100,16 @@ data class Payment(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val clientName: String,
     val amount: Double,
-    val status: String, // "Paid", "Pending", "Overdue"
-    val date: Long = System.currentTimeMillis()
+    val status: String, // "Paid", "Pending", "Overdue", "Pending Verification"
+    val date: Long = System.currentTimeMillis(),
+    val paymentType: String = "Manual EFT", // "Manual EFT", "Card", "Monthly Instalment", "Corporate Invoice"
+    val reference: String = "",
+    val userEmail: String = "",
+    val notes: String = "",
+    val hasInvoice: Boolean = true,
+    val hasReceipt: Boolean = false,
+    val courseId: Int = 0, // 0 means general / multiple
+    val dueDate: Long = System.currentTimeMillis() + 14 * 24 * 3600 * 1000L
 )
 
 @Entity(tableName = "placements")
